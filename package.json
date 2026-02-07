@@ -1,0 +1,45 @@
+{
+  "name": "opencode-codex-auto-switch",
+  "version": "1.0.0",
+  "description": "OpenCode plugin for automatic ChatGPT account rotation with Codex backend - manage multiple ChatGPT Plus/Pro subscriptions with auto-failover",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "opencode",
+    "openai",
+    "codex",
+    "chatgpt",
+    "oauth",
+    "multi-account",
+    "auto-switch",
+    "rotation",
+    "plugin",
+    "auth"
+  ],
+  "scripts": {
+    "build": "tsc && cp lib/oauth-success.html dist/lib/",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.0.150"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.0.150",
+    "@opencode-ai/sdk": "^1.0.150",
+    "@types/node": "^24.6.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@openauthjs/openauth": "^0.4.3"
+  }
+}

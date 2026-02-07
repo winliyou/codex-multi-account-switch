@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codex Auto-Switch - Authentication Successful</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  background: #0a0a0a; color: #B7B1B1;
+  height: 100vh; display: flex; align-items: center; justify-content: center;
+}
+.container { max-width: 550px; text-align: center; padding: 20px; }
+.checkmark {
+  width: 80px; height: 80px; border-radius: 50%;
+  border: 3px solid #27c93f; margin: 0 auto 30px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 36px; color: #27c93f;
+  animation: fadeIn 0.5s ease-out;
+}
+.title {
+  font-size: 28px; color: #00ff41; margin-bottom: 16px;
+  text-shadow: 0 0 15px rgba(0,255,65,0.4);
+}
+.message { font-size: 16px; color: #9a9595; line-height: 1.8; margin-bottom: 24px; }
+.info-box {
+  background: rgba(26,26,26,0.95); border: 1px solid rgba(75,70,70,0.3);
+  border-radius: 8px; padding: 20px; text-align: left; font-size: 14px; line-height: 2;
+}
+.info-line { display: flex; gap: 10px; }
+.info-line .prompt { color: #6a6565; }
+.info-line .value { color: #B7B1B1; }
+.footer { margin-top: 30px; font-size: 14px; color: #6a6565; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="checkmark">&#10003;</div>
+  <div class="title">ACCOUNT ADDED</div>
+  <div class="message">
+    ChatGPT account has been added to the rotation pool.<br>
+    You can add more accounts by running the auth flow again.
+  </div>
+  <div class="info-box">
+    <div class="info-line"><span class="prompt">&#9656;</span><span class="value">OAuth token exchange verified</span></div>
+    <div class="info-line"><span class="prompt">&#9656;</span><span class="value">Account added to rotation pool</span></div>
+    <div class="info-line"><span class="prompt">&#9656;</span><span class="value">Auto-switch enabled</span></div>
+    <div class="info-line"><span class="prompt">&#10003;</span><span class="value">Ready for deployment</span></div>
+  </div>
+  <div class="footer">Return to your terminal to continue</div>
+</div>
+</body>
+</html>
