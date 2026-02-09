@@ -32,7 +32,7 @@ import {
 	PLUGIN_NAME,
 	PROVIDER_ID,
 } from "./lib/constants.js";
-import { logRequest, logDebug, logInfo, logWarn } from "./lib/logger.js";
+import { logRequest, logDebug } from "./lib/logger.js";
 import { AccountManager } from "./lib/accounts/manager.js";
 import {
 	createCodexHeaders,
@@ -115,7 +115,7 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 				// Bootstrap: if no accounts in storage, try to import from opencode's auth
 				const auth = await getAuth();
 				if (accountManager.count === 0 && auth.type === "oauth") {
-					logInfo("No accounts in storage, importing from opencode auth");
+					logDebug("No accounts in storage, importing from opencode auth");
 					const tokens: TokenSuccess = {
 						type: "success",
 						access: auth.access,
@@ -130,8 +130,65 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 					return {};
 				}
 
-				logInfo(`Loaded ${accountManager.count} account(s), strategy: ${pluginConfig.strategy}`);
-				logDebug("Account summary:\n" + accountManager.getSummary());
+				logDebug(
+					`Loaded ${accountManager.count} account(s), strategy: ${pluginConfig.strategy}\n` +
+					accountManager.getSummary(),
+				);
+
+				// Track which account was last synced to opencode to avoid redundant updates
+				let lastSyncedAccountIndex: number | null = null;
+
+				/**
+				 * Sync the active account's tokens to opencode's auth store.
+				 * This lets opencode's status view display the current provider auth.
+				 */
+				async function syncActiveAccountToOpencode(
+					account: { index: number; email?: string; refreshToken: string; accessToken?: string; accessTokenExpires?: number },
+				): Promise<void> {
+					if (account.index === lastSyncedAccountIndex) return;
+					if (!account.accessToken || !account.accessTokenExpires) return;
+					try {
+						await client.auth.set({
+							path: { id: PROVIDER_ID },
+							body: {
+								type: "oauth",
+								refresh: account.refreshToken,
+								access: account.accessToken,
+								expires: account.accessTokenExpires,
+							},
+						});
+						lastSyncedAccountIndex = account.index;
+					} catch {
+						// Non-critical: don't break the request flow
+					}
+				}
+
+				/**
+				 * Show a toast notification in the opencode TUI.
+				 * Non-blocking; failures are silently ignored.
+				 */
+				function showToast(
+					message: string,
+					variant: "info" | "success" | "warning" | "error" = "info",
+					duration = 3000,
+				): void {
+					client.tui.showToast({
+						body: { message, variant, duration },
+					}).catch(() => {});
+				}
+
+				/**
+				 * Write a structured log entry to opencode's log system.
+				 * Non-blocking; failures are silently ignored.
+				 */
+				function appLog(
+					level: "debug" | "info" | "warn" | "error",
+					message: string,
+				): void {
+					client.app.log({
+						body: { service: PLUGIN_NAME, level, message },
+					}).catch(() => {});
+				}
 
 				// Extract user configuration
 				const providerConfig = provider as
@@ -188,9 +245,8 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 								await accountManager.ensureAccessToken(account);
 							if (!refreshed) {
 								// Token refresh failed, try next account
-								logWarn(
-									`Token refresh failed for [${account.index}], switching account`,
-								);
+								appLog("warn", `Token refresh failed for ${accountManager.getAccountLabel(account)}, switching account`);
+								showToast(`Token refresh failed for ${account.email || `account #${account.index}`}, switching...`, "warning");
 								account = accountManager.selectAccount()!;
 								if (!account) {
 									throw new Error(
@@ -200,6 +256,9 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 								continue;
 							}
 							account = refreshed;
+
+							// Sync active account to opencode so the UI reflects the current account
+							await syncActiveAccountToOpencode(account);
 
 							// Create headers with this account's credentials
 							const headers = createCodexHeaders(
@@ -263,9 +322,7 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 									return response;
 								}
 
-								logInfo(
-									`Rate limit on [${account.index}] ${account.email || "unknown"}: ${reason} (attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
-								);
+								appLog("warn", `Rate limit on [${account.index}] ${account.email || "unknown"}: ${reason} (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
 
 								// Mark account and try next
 								accountManager.markRateLimited(
@@ -277,10 +334,13 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 									const nextAccount =
 										accountManager.selectAccount();
 									if (nextAccount) {
-										logInfo(
-											`Switching to [${nextAccount.index}] ${nextAccount.email || "unknown"}`,
-										);
+										const fromLabel = account.email || `account #${account.index}`;
+										const toLabel = nextAccount.email || `account #${nextAccount.index}`;
+										showToast(`Rate limited → switching ${fromLabel} → ${toLabel}`, "warning");
+										appLog("info", `Account switched: [${account.index}] → [${nextAccount.index}] ${nextAccount.email || "unknown"}`);
 										account = nextAccount;
+										// Force re-sync to opencode on next iteration
+										lastSyncedAccountIndex = null;
 										continue;
 									}
 								}
@@ -291,16 +351,17 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 
 							// Auth error → disable account and try next
 							if (response.status === HTTP_STATUS.UNAUTHORIZED) {
-								logWarn(
-									`Auth error on [${account.index}] ${account.email || "unknown"}`,
-								);
+								appLog("warn", `Auth error on [${account.index}] ${account.email || "unknown"}`);
 								accountManager.recordFailure(account.index);
 
 								if (attempt < MAX_RETRIES) {
 									const nextAccount =
 										accountManager.selectAccount();
 									if (nextAccount) {
+										showToast(`Auth error → switching to ${nextAccount.email || `account #${nextAccount.index}`}`, "warning");
+										appLog("info", `Account switched: [${account.index}] → [${nextAccount.index}] ${nextAccount.email || "unknown"}`);
 										account = nextAccount;
+										lastSyncedAccountIndex = null;
 										continue;
 									}
 								}

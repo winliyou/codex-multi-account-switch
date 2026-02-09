@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { STORAGE_FILENAME } from "../constants.js";
 import type { AccountStorage, StoredAccount } from "../types.js";
-import { logDebug, logInfo, logWarn } from "../logger.js";
+import { logDebug, logWarn } from "../logger.js";
 
 function getConfigDir(): string {
 	if (process.env.OPENCODE_CONFIG_DIR) {

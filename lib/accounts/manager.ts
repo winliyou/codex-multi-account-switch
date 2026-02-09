@@ -10,7 +10,7 @@
 
 import { decodeJWT, refreshAccessToken } from "../auth/auth.js";
 import { JWT_CLAIM_PATH, BACKOFF, PLUGIN_NAME } from "../constants.js";
-import { logDebug, logInfo, logWarn } from "../logger.js";
+import { logDebug, logWarn } from "../logger.js";
 import type {
 	AccountSelectionStrategy,
 	ManagedAccount,
@@ -44,7 +44,7 @@ export class AccountManager {
 	}
 
 	/**
-	 * Load accounts from disk. Safe to call multiple times.
+	 * Load accounts from disk. Safe to call multiple times (idempotent).
 	 */
 	async load(): Promise<void> {
 		if (this.loaded) return;
@@ -56,7 +56,7 @@ export class AccountManager {
 		this.activeIndex =
 			storage.accounts.length > 0 ? storage.activeIndex : null;
 		this.loaded = true;
-		logDebug(`Loaded ${this.accounts.length} accounts`);
+		logDebug(`Loaded ${this.accounts.length} accounts from disk`);
 	}
 
 	/**
@@ -73,26 +73,46 @@ export class AccountManager {
 		if (this.accounts.length === 0) return "No accounts";
 		return this.accounts
 			.map((a, i) => {
-				const active = i === this.activeIndex ? "→" : " ";
+				const active = i === this.activeIndex ? " *" : "  ";
 				const status = !a.enabled
 					? "disabled"
 					: this.isRateLimited(a)
 						? "rate-limited"
 						: "ok";
 				const health = this.healthTracker.getScore(i);
-				return `${active}[${i}] ${a.email || "unknown"} (${status}, health=${health})`;
+				return `  [${i}]${active} ${a.email || a.accountId || "unknown"} (${status}, health=${health})`;
 			})
 			.join("\n");
 	}
 
 	/**
+	 * Get a short label for the given account (for per-request logging).
+	 */
+	getAccountLabel(account: ManagedAccount): string {
+		return `[${account.index}] ${account.email || account.accountId || "unknown"}`;
+	}
+
+	/**
 	 * Add a new account from OAuth tokens.
 	 * Returns the account index.
+	 *
+	 * IMPORTANT: This method loads existing accounts from disk first to prevent
+	 * overwriting previously saved accounts (the authorize flow may call this
+	 * before loader() has a chance to run).
 	 */
 	async addAccount(tokens: TokenSuccess): Promise<number> {
+		// Ensure existing accounts are loaded from disk before modifying.
+		// Without this, authorize → addAccount would start with an empty array
+		// and overwrite all previously saved accounts.
+		await this.load();
+
 		const decoded = decodeJWT(tokens.access);
 		const accountId = decoded?.[JWT_CLAIM_PATH]?.chatgpt_account_id;
-		const email = decoded?.email as string | undefined;
+		// Email lives under the "https://api.openai.com/profile" claim, not top-level
+		const profileClaim = decoded?.["https://api.openai.com/profile"] as
+			| { email?: string }
+			| undefined;
+		const email = profileClaim?.email ?? (decoded?.email as string | undefined);
 
 		// Check if account already exists (by refresh token or accountId)
 		const existingIdx = this.accounts.findIndex(
@@ -115,10 +135,11 @@ export class AccountManager {
 			existing.rateLimitReason = undefined;
 			this.healthTracker.reset(existingIdx);
 
-			logInfo(
+			logDebug(
 				`Updated existing account [${existingIdx}] ${existing.email || accountId || "unknown"}`,
 			);
-			this.scheduleSave();
+			// Save immediately to prevent data loss (process may exit soon after auth)
+			await this.saveToDisk();
 			return existingIdx;
 		}
 
@@ -143,10 +164,11 @@ export class AccountManager {
 			this.activeIndex = 0;
 		}
 
-		logInfo(
+		logDebug(
 			`Added account [${newAccount.index}] ${email || accountId || "unknown"} (total: ${this.accounts.length})`,
 		);
-		this.scheduleSave();
+		// Save immediately to prevent data loss (process may exit soon after auth)
+		await this.saveToDisk();
 		return newAccount.index;
 	}
 
@@ -209,7 +231,7 @@ export class AccountManager {
 		if (this.activeIndex !== selectedIndex) {
 			const prev = this.activeIndex !== null ? this.accounts[this.activeIndex] : null;
 			const next = this.accounts[selectedIndex!];
-			logInfo(
+			logDebug(
 				`Account switch: [${prev?.index ?? "none"}]${prev?.email ? ` ${prev.email}` : ""} → [${next?.index}]${next?.email ? ` ${next.email}` : ""}`,
 			);
 		}
@@ -251,7 +273,13 @@ export class AccountManager {
 		if (!account.accountId) {
 			const decoded = decodeJWT(result.access);
 			account.accountId = decoded?.[JWT_CLAIM_PATH]?.chatgpt_account_id;
-			account.email = (decoded?.email as string | undefined) || account.email;
+			const profileClaim = decoded?.["https://api.openai.com/profile"] as
+				| { email?: string }
+				| undefined;
+			account.email =
+				profileClaim?.email ??
+				(decoded?.email as string | undefined) ??
+				account.email;
 		}
 
 		this.scheduleSave();
@@ -286,7 +314,7 @@ export class AccountManager {
 
 		this.healthTracker.recordRateLimit(index);
 
-		logInfo(
+		logDebug(
 			`Account [${index}] ${account.email || "unknown"} rate-limited: ${reason}, backoff ${Math.round(backoffMs / 1000)}s, consecutive: ${account.consecutiveFailures}`,
 		);
 		this.scheduleSave();
