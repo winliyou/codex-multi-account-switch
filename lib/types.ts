@@ -182,6 +182,7 @@ export interface StoredAccount {
 /** Account storage format */
 export interface AccountStorage {
 	version: 1;
+	count: number;
 	accounts: StoredAccount[];
 	activeIndex: number;
 }

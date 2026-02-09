@@ -408,6 +408,7 @@ export class AccountManager {
 
 		await saveAccounts({
 			version: 1,
+			count: storedAccounts.length,
 			accounts: storedAccounts,
 			activeIndex: this.activeIndex ?? 0,
 		});

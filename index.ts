@@ -143,19 +143,23 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 				 * This lets opencode's status view display the current provider auth.
 				 */
 				async function syncActiveAccountToOpencode(
-					account: { index: number; email?: string; refreshToken: string; accessToken?: string; accessTokenExpires?: number },
+					account: { index: number; email?: string; accountId?: string; refreshToken: string; accessToken?: string; accessTokenExpires?: number },
 				): Promise<void> {
 					if (account.index === lastSyncedAccountIndex) return;
 					if (!account.accessToken || !account.accessTokenExpires) return;
 					try {
+						// Include accountId (v2 SDK field) so opencode can display the active account
+						const authBody = {
+							type: "oauth" as const,
+							refresh: account.refreshToken,
+							access: account.accessToken,
+							expires: account.accessTokenExpires,
+							// v2 OAuth supports accountId — use email for human readability
+							accountId: account.email || account.accountId || undefined,
+						};
 						await client.auth.set({
 							path: { id: PROVIDER_ID },
-							body: {
-								type: "oauth",
-								refresh: account.refreshToken,
-								access: account.accessToken,
-								expires: account.accessTokenExpires,
-							},
+							body: authBody as Parameters<typeof client.auth.set>[0]["body"],
 						});
 						lastSyncedAccountIndex = account.index;
 					} catch {
@@ -189,6 +193,14 @@ export const CodexAutoSwitchPlugin: Plugin = async ({
 						body: { service: PLUGIN_NAME, level, message },
 					}).catch(() => {});
 				}
+
+				// Notify user about loaded accounts
+				showToast(
+					`Codex auto-switch: ${accountManager.count} account(s) loaded`,
+					"success",
+					3000,
+				);
+				appLog("info", `Loaded ${accountManager.count} account(s), strategy: ${pluginConfig.strategy}`);
 
 				// Extract user configuration
 				const providerConfig = provider as

@@ -26,7 +26,7 @@ export function getStoragePath(): string {
 }
 
 function createEmptyStorage(): AccountStorage {
-	return { version: 1, accounts: [], activeIndex: 0 };
+	return { version: 1, count: 0, accounts: [], activeIndex: 0 };
 }
 
 /**
@@ -83,6 +83,7 @@ export async function loadAccounts(): Promise<AccountStorage> {
 
 		return {
 			version: 1,
+			count: deduped.length,
 			accounts: deduped,
 			activeIndex,
 		};
@@ -130,7 +131,7 @@ export function loadAccountsSync(): AccountStorage {
 			activeIndex = 0;
 		}
 
-		return { version: 1, accounts: deduped, activeIndex };
+		return { version: 1, count: deduped.length, accounts: deduped, activeIndex };
 	} catch {
 		return createEmptyStorage();
 	}
@@ -149,7 +150,12 @@ export async function saveAccounts(storage: AccountStorage): Promise<void> {
 	await ensureGitignore(configDir);
 
 	const tempPath = `${path}.${randomBytes(6).toString("hex")}.tmp`;
-	const content = JSON.stringify(storage, null, 2);
+	// Ensure count is always consistent with accounts array
+	const storageWithCount: AccountStorage = {
+		...storage,
+		count: storage.accounts.length,
+	};
+	const content = JSON.stringify(storageWithCount, null, 2);
 
 	try {
 		await fs.writeFile(tempPath, content, "utf-8");
